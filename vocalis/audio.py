@@ -147,13 +147,18 @@ class SoundDeviceAudioSink(AudioSink):
 
             self._playback_task = asyncio.create_task(self._play_task_fn(samples, dev))
             logger.info("SoundDeviceAudioSink starting playback...")
-            try:
-                await self._playback_task
-                logger.info("SoundDeviceAudioSink playback completed normally")
-            except asyncio.CancelledError:
-                logger.info("SoundDeviceAudioSink playback aborted via cancellation")
-            finally:
-                self._playback_task = None
+            task = self._playback_task
+
+        # Await the task outside the lock to avoid deadlock when calling abort()
+        try:
+            await task
+            logger.info("SoundDeviceAudioSink playback completed normally")
+        except asyncio.CancelledError:
+            logger.info("SoundDeviceAudioSink playback aborted via cancellation")
+        finally:
+            async with self._lock:
+                if self._playback_task == task:
+                    self._playback_task = None
 
     async def _abort_under_lock(self) -> None:
         if self._playback_task and not self._playback_task.done():
@@ -194,12 +199,16 @@ class FileAudioSink(AudioSink):
             # Simulate hardware play duration in asyncio
             duration = (len(pcm_bytes) / 2) / 16000
             self._playback_task = asyncio.create_task(asyncio.sleep(duration))
-            try:
-                await self._playback_task
-            except asyncio.CancelledError:
-                pass
-            finally:
-                self._playback_task = None
+            task = self._playback_task
+
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        finally:
+            async with self._lock:
+                if self._playback_task == task:
+                    self._playback_task = None
 
     async def abort(self) -> None:
         async with self._lock:

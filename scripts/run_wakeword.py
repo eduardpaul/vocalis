@@ -27,7 +27,7 @@ except ImportError:
 async def main():
     import argparse
     parser = argparse.ArgumentParser(description="Vocalis Wake Word Standby Service")
-    parser.add_argument("--model", default="openwakeword_alfred.onnx", help="ONNX model filename in scripts/ directory (default: openwakeword_alfred.onnx)")
+    parser.add_argument("--model", default="openwakeword_alfred.onnx", help="ONNX model filename in models/ directory (default: openwakeword_alfred.onnx)")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml (default: config.yaml)")
     args = parser.parse_args()
 
@@ -42,7 +42,8 @@ async def main():
 
     # 2. Check for wake word model
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    wakeword_model_path = os.path.join(script_dir, args.model)
+    project_root = os.path.dirname(script_dir)
+    wakeword_model_path = os.path.join(project_root, "models", args.model)
     if not os.path.exists(wakeword_model_path):
         print(f"Error: Wakeword model not found at {wakeword_model_path}")
         sys.exit(1)

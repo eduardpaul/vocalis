@@ -49,3 +49,15 @@ models:
   tts:
     engine: "supertonic"
     model_dir: "./models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11"
+
+wakeword:
+  enabled: true
+  model_path: "./models/openwakeword_alfred.onnx"
+  threshold: 0.50
+  auto_ask: true
+  priority: 10
+  wake_responses:
+    - "¿Qué desea?"
+    - "¿Cómo puedo ayudar?"
+    - "Sí, mi señor"
+

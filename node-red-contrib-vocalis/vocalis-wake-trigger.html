@@ -1,0 +1,29 @@
+<script type="text/javascript">
+    RED.nodes.registerType('vocalis-wake-trigger',{
+        category: 'Vocalis Voice',
+        color: '#a78bfa',
+        defaults: {
+            name: { value: "" },
+            server: { value: "", type: "vocalis-config", required: true }
+        },
+        inputs: 0,
+        outputs: 2,
+        outputLabels: ["Wake Event", "Command (Auto-Ask Result)"],
+        icon: "font-awesome/fa-bell",
+        label: function() {
+            return this.name || "Vocalis Wake Trigger";
+        },
+        paletteLabel: "vocalis wake"
+    });
+</script>
+
+<script type="text/html" data-template-name="vocalis-wake-trigger">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-server"><i class="fa fa-server"></i> Server</label>
+        <input type="text" id="node-input-server">
+    </div>
+</script>

@@ -123,7 +123,7 @@ This loads your `config.yaml`, binds the audio hardware drivers, launches the Fa
 
 You can run Vocalis in standby wakeword detection mode. This keeps the microphone active, analyzing audio using `openWakeWord` (defaulting to the `openwakeword_hey_bro.onnx` model). When the wake word is detected, it triggers the Vocalis Ask pipeline with a randomized Spanish prompt.
 
-*Note: Wake word ONNX models (like `openwakeword_alfred.onnx` or `openwakeword_hey_bro.onnx`) are downloaded from [openwakeword.com](https://openwakeword.com/) and placed inside the `scripts/` directory.*
+*Note: Wake word ONNX models (like `openwakeword_alfred.onnx` or `openwakeword_hey_bro.onnx`) are placed inside the `models/` directory.*
 
 ```bash
 # Start with default (hey_bro)

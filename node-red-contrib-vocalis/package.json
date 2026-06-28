@@ -1,0 +1,27 @@
+{
+  "name": "node-red-contrib-vocalis",
+  "version": "1.0.0",
+  "description": "Node-RED palette nodes for Vocalis Voice Assistant I/O Engine",
+  "main": "none",
+  "node-red": {
+    "nodes": {
+      "vocalis-config": "vocalis-config.js",
+      "vocalis-say": "vocalis-say.js",
+      "vocalis-ask": "vocalis-ask.js",
+      "vocalis-wake-trigger": "vocalis-wake-trigger.js"
+    }
+  },
+  "keywords": [
+    "node-red",
+    "vocalis",
+    "voice-assistant",
+    "tts",
+    "asr",
+    "wakeword"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

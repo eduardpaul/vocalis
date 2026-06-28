@@ -69,11 +69,20 @@ class ModelsConfig(BaseModel):
     speaker_id: SpeakerIdConfig = Field(default_factory=SpeakerIdConfig)
     tts: TtsConfig = Field(default_factory=TtsConfig)
 
+class WakewordConfig(BaseModel):
+    enabled: bool = False
+    model_path: str = "./models/openwakeword_alfred.onnx"
+    threshold: float = 0.50
+    auto_ask: bool = True
+    priority: int = 10
+    wake_responses: List[str] = Field(default_factory=lambda: ["¿Qué desea?", "¿Cómo puedo ayudar?", "Sí, mi señor"])
+
 class AppConfig(BaseModel):
     system: SystemConfig = Field(default_factory=SystemConfig)
     interfaces: InterfacesConfig = Field(default_factory=InterfacesConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
+    wakeword: WakewordConfig = Field(default_factory=WakewordConfig)
 
     @classmethod
     def load_yaml(cls, path: str) -> "AppConfig":
@@ -96,3 +105,4 @@ class AppConfig(BaseModel):
         self.models.speaker_id.model = resolve(self.models.speaker_id.model)
         self.models.speaker_id.embeddings_dir = resolve(self.models.speaker_id.embeddings_dir)
         self.models.tts.model_dir = resolve(self.models.tts.model_dir)
+        self.wakeword.model_path = resolve(self.wakeword.model_path)

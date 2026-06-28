@@ -1,0 +1,38 @@
+<script type="text/javascript">
+    RED.nodes.registerType('vocalis-say',{
+        category: 'Vocalis Voice',
+        color: '#a78bfa',
+        defaults: {
+            name: { value: "" },
+            server: { value: "", type: "vocalis-config", required: true },
+            text: { value: "" },
+            priority: { value: 0, validate: RED.validators.number() }
+        },
+        inputs: 1,
+        outputs: 1,
+        icon: "font-awesome/fa-volume-up",
+        label: function() {
+            return this.name || this.text || "Vocalis Say";
+        },
+        paletteLabel: "vocalis say"
+    });
+</script>
+
+<script type="text/html" data-template-name="vocalis-say">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-server"><i class="fa fa-server"></i> Server</label>
+        <input type="text" id="node-input-server">
+    </div>
+    <div class="form-row">
+        <label for="node-input-text"><i class="fa fa-comment"></i> TTS Text</label>
+        <input type="text" id="node-input-text" placeholder="Text to say (leave blank to use msg.payload)">
+    </div>
+    <div class="form-row">
+        <label for="node-input-priority"><i class="fa fa-sort-amount-desc"></i> Priority</label>
+        <input type="number" id="node-input-priority" placeholder="0" min="0" step="1">
+    </div>
+</script>

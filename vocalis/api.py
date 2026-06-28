@@ -2,9 +2,13 @@ import asyncio
 import logging
 import json
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from aiomqtt import Client as MqttClient
+from typing import AsyncGenerator, List, Set, Optional
+import time
+import random
 
 from vocalis.config import AppConfig
 from vocalis.state import StateManager
@@ -477,6 +481,152 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        logger.info("WebSocket client connected.")
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.discard(websocket)
+        logger.info("WebSocket client disconnected.")
+
+    async def broadcast(self, message: dict):
+        if not self.active_connections:
+            return
+        payload_str = json.dumps(message)
+        logger.debug(f"Broadcasting WebSocket message: {payload_str}")
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_text(payload_str)
+            except Exception as e:
+                logger.error(f"Error broadcasting to WebSocket connection: {e}")
+
+ws_manager = ConnectionManager()
+
+class MultiplexedAudioSource(AudioSource):
+    def __init__(self, raw_source: AudioSource):
+        self.raw_source = raw_source
+        self.active_queue: Optional[asyncio.Queue] = None
+        self._lock = asyncio.Lock()
+
+    async def register_queue(self, queue: asyncio.Queue):
+        async with self._lock:
+            self.active_queue = queue
+
+    async def unregister_queue(self):
+        async with self._lock:
+            self.active_queue = None
+
+    async def push_chunk(self, chunk: bytes):
+        async with self._lock:
+            if self.active_queue is not None:
+                self.active_queue.put_nowait(chunk)
+
+    async def read_chunks(self) -> AsyncGenerator[bytes, None]:
+        queue = asyncio.Queue()
+        await self.register_queue(queue)
+        try:
+            while True:
+                chunk = await queue.get()
+                yield chunk
+        finally:
+            await self.unregister_queue()
+
+async def background_audio_task(
+    config: AppConfig,
+    state_manager: StateManager,
+    engine: AssistantEngine,
+    raw_source: AudioSource,
+    multiplexed_source: MultiplexedAudioSource,
+    sink: AudioSink
+):
+    import numpy as np
+    
+    oww_model = None
+    target_key = None
+    
+    if config.wakeword.enabled:
+        logger.info("Initializing openWakeWord model inside background loop...")
+        try:
+            from openwakeword.model import Model as OWWModel
+            oww_model = OWWModel(
+                wakeword_models=[config.wakeword.model_path],
+                inference_framework="onnx"
+            )
+            dummy_input = np.zeros(1280, dtype=np.int16)
+            predictions = oww_model.predict(dummy_input)
+            prediction_keys = list(predictions.keys())
+            if prediction_keys:
+                target_key = prediction_keys[0]
+                logger.info(f"Loaded openWakeWord key: '{target_key}'")
+            else:
+                logger.error("No prediction keys loaded in openWakeWord model.")
+        except Exception as e:
+            logger.exception(f"Error initializing openWakeWord: {e}")
+            logger.warning("Wakeword detection will be disabled.")
+            oww_model = None
+
+    samples_needed = 1280
+    bytes_needed = samples_needed * 2
+    audio_buffer = bytearray()
+
+    logger.info("Background audio loop started reading chunks...")
+    try:
+        async for chunk in raw_source.read_chunks():
+            if state_manager.current != "IDLE":
+                await multiplexed_source.push_chunk(chunk)
+            elif oww_model and target_key:
+                audio_buffer.extend(chunk)
+                while len(audio_buffer) >= bytes_needed:
+                    chunk_bytes = audio_buffer[:bytes_needed]
+                    del audio_buffer[:bytes_needed]
+                    
+                    pcm16 = np.frombuffer(chunk_bytes, dtype=np.int16)
+                    predictions = oww_model.predict(pcm16)
+                    score = predictions.get(target_key, 0.0)
+                    
+                    if score >= config.wakeword.threshold:
+                        logger.info(f"WAKE DETECTED! (Score: {score:.3f})")
+                        
+                        await ws_manager.broadcast({
+                            "event": "wake_detected",
+                            "model": target_key,
+                            "timestamp": time.time(),
+                            "score": float(score)
+                        })
+                        
+                        oww_model.reset()
+                        audio_buffer.clear()
+                        
+                        if config.wakeword.auto_ask:
+                            async def run_auto_ask():
+                                prompt = random.choice(config.wakeword.wake_responses)
+                                logger.info(f"Auto-ask wake prompt: '{prompt}'")
+                                request = AskRequest(
+                                    context_id=f"wake_{int(time.time())}",
+                                    tts_text=prompt,
+                                    require_speaker_id=False,
+                                    output_format="both",
+                                    barge_in=True,
+                                    priority=config.wakeword.priority
+                                )
+                                try:
+                                    result = await engine.ask(request, multiplexed_source, sink)
+                                    logger.info(f"Auto-ask complete: status={result.status}, text='{result.transcription}'")
+                                except Exception as err:
+                                    logger.exception(f"Error in Auto-ask task: {err}")
+                            
+                            asyncio.create_task(run_auto_ask())
+                        break
+    except asyncio.CancelledError:
+        logger.info("Background audio loop cancelled.")
+    except Exception as e:
+        logger.exception(f"Error in background audio loop: {e}")
+
 async def mqtt_loop(config: AppConfig, engine: AssistantEngine, state_manager: StateManager, source: AudioSource, sink: AudioSink):
     mqtt_cfg = config.interfaces.mqtt
     if not mqtt_cfg.enabled:
@@ -566,20 +716,79 @@ async def mqtt_loop(config: AppConfig, engine: AssistantEngine, state_manager: S
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    mqtt_task = asyncio.create_task(mqtt_loop(
+    # Start engine queue worker
+    app.state.engine.start(app.state.source, app.state.sink)
+
+    # Start raw background audio task
+    app.state.bg_audio_task = asyncio.create_task(background_audio_task(
         app.state.config,
-        app.state.engine,
         app.state.state_manager,
+        app.state.engine,
+        app.state.raw_source,
         app.state.source,
         app.state.sink
     ))
+
+    # Set up WS broadcast state hook
+    def ws_state_hook(old_state, new_state):
+        asyncio.create_task(ws_manager.broadcast({
+            "event": "state_change",
+            "old_state": old_state,
+            "new_state": new_state,
+            "timestamp": time.time()
+        }))
+    app.state.state_manager.set_hook(ws_state_hook)
+
+    # Set up completion hook to broadcast results to WebSockets
+    def ws_completion_hook(result):
+        if isinstance(result, AskResponse):
+            payload = {
+                "event": "ask_result",
+                "status": result.status,
+                "transcription": result.transcription,
+                "speaker": result.speaker,
+                "context_id": result.context_id,
+                "audio_wav_base64": result.audio_wav_base64
+            }
+        else:
+            payload = {
+                "event": "say_result",
+                "status": result.status,
+                "context_id": result.context_id
+            }
+        asyncio.create_task(ws_manager.broadcast(payload))
+    app.state.engine.set_completion_hook(ws_completion_hook)
+
+    # Start MQTT task if enabled
+    mqtt_task = None
+    if app.state.config.interfaces.mqtt.enabled:
+        mqtt_task = asyncio.create_task(mqtt_loop(
+            app.state.config,
+            app.state.engine,
+            app.state.state_manager,
+            app.state.source,
+            app.state.sink
+        ))
+
     yield
-    mqtt_task.cancel()
+
+    # Clean up
+    if mqtt_task:
+        mqtt_task.cancel()
+        try:
+            await mqtt_task
+        except asyncio.CancelledError:
+            pass
+
+    app.state.bg_audio_task.cancel()
     try:
-        await mqtt_task
+        await app.state.bg_audio_task
     except asyncio.CancelledError:
         pass
+
+    await app.state.engine.stop()
     app.state.ml_pool.close()
+
 
 def create_app(config: AppConfig) -> FastAPI:
     app = FastAPI(
@@ -589,18 +798,27 @@ def create_app(config: AppConfig) -> FastAPI:
         lifespan=lifespan
     )
     
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
     app.state.config = config
     app.state.state_manager = StateManager()
     app.state.ml_pool = MLWorkerPool(config)
     app.state.engine = AssistantEngine(config, app.state.state_manager, app.state.ml_pool)
     
-    app.state.source = SoundDeviceAudioSource(
+    app.state.raw_source = SoundDeviceAudioSource(
         device_index=config.audio.input_device_index,
         sample_rate=config.audio.sample_rate,
         channels=config.audio.channels,
         chunk_size=config.audio.chunk_size,
         gain=config.audio.gain
     )
+    app.state.source = MultiplexedAudioSource(app.state.raw_source)
     app.state.sink = SoundDeviceAudioSink(
         device_index=config.audio.output_device_index,
         sample_rate=config.audio.sample_rate,
@@ -624,6 +842,56 @@ def create_app(config: AppConfig) -> FastAPI:
     @app.get("/status")
     async def status():
         return {"state": app.state.state_manager.current}
+
+    @app.get("/queue")
+    async def get_queue():
+        q_list = []
+        for q in app.state.engine.queue:
+            q_list.append({
+                "context_id": q.context_id,
+                "type": q.type,
+                "created_at": q.created_at
+            })
+        active = None
+        if app.state.engine.current_active:
+            active = {
+                "context_id": app.state.engine.current_active.context_id,
+                "type": app.state.engine.current_active.type,
+                "created_at": app.state.engine.current_active.created_at
+            }
+        return {"active": active, "pending": q_list}
+
+    @app.post("/queue/cancel/{context_id}")
+    async def cancel_queue_item(context_id: str):
+        success = await app.state.engine.cancel_request(context_id)
+        return {"context_id": context_id, "success": success}
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket):
+        await ws_manager.connect(websocket)
+        try:
+            await websocket.send_json({
+                "event": "handshake",
+                "state": app.state.state_manager.current,
+                "timestamp": time.time()
+            })
+            while True:
+                data = await websocket.receive_text()
+                try:
+                    payload = json.loads(data)
+                    if payload.get("command") == "cancel":
+                        ctx_id = payload.get("context_id")
+                        if ctx_id:
+                            success = await app.state.engine.cancel_request(ctx_id)
+                            await websocket.send_json({
+                                "event": "cancellation_result",
+                                "context_id": ctx_id,
+                                "success": success
+                            })
+                except Exception:
+                    pass
+        except WebSocketDisconnect:
+            ws_manager.disconnect(websocket)
 
     if config.interfaces.http.enabled_ui:
         @app.get("/", response_class=HTMLResponse)

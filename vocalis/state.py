@@ -9,11 +9,21 @@ class StateManager:
     def __init__(self, initial_state: str = "IDLE"):
         self._state = initial_state
         self._lock = asyncio.Lock()
-        self._hook: Optional[Callable[[str, str], None]] = None
+        self._hooks = []
 
     def set_hook(self, hook: Callable[[str, str], None]):
-        """Sets the hook called on transition. Signature: hook(old_state, new_state)"""
-        self._hook = hook
+        """Sets/registers the hook called on transition. Signature: hook(old_state, new_state)"""
+        self.register_hook(hook)
+
+    def register_hook(self, hook: Callable[[str, str], None]):
+        """Registers a hook called on transition."""
+        if hook not in self._hooks:
+            self._hooks.append(hook)
+
+    def unregister_hook(self, hook: Callable[[str, str], None]):
+        """Unregisters a transition hook."""
+        if hook in self._hooks:
+            self._hooks.remove(hook)
 
     @property
     def current(self) -> str:
@@ -32,12 +42,12 @@ class StateManager:
             self._state = to_state
             logger.info(f"System State transition: {old_state} -> {to_state}")
             
-            if self._hook:
+            for hook in self._hooks:
                 try:
-                    if inspect.iscoroutinefunction(self._hook):
-                        await self._hook(old_state, to_state)
+                    if inspect.iscoroutinefunction(hook):
+                        await hook(old_state, to_state)
                     else:
-                        self._hook(old_state, to_state)
+                        hook(old_state, to_state)
                 except Exception as e:
                     logger.error(f"Error in StateManager transition hook: {e}")
 

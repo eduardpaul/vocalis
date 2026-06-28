@@ -21,6 +21,29 @@ fi
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 echo -e "Found Python version: ${PYTHON_VERSION}"
 
+# 1b. Check CPU architecture
+ARCH=$(uname -m)
+echo -e "Detected CPU architecture: ${ARCH}"
+if [[ "$ARCH" == "armv7l" || "$ARCH" == "armv6l" ]]; then
+    echo -e "${YELLOW}Warning: You are running a 32-bit ARM system (${ARCH}).${NC}"
+    echo -e "ONNX Runtime and speech libraries are highly optimized for 64-bit systems."
+    echo -e "We strongly recommend installing a 64-bit OS (e.g. Ubuntu 64-bit or Raspberry Pi OS 64-bit).${NC}"
+fi
+
+# 1c. Check for virtual environment module (python3-venv)
+if ! python3 -c "import venv" &> /dev/null; then
+    echo -e "${RED}Error: Python 'venv' module is not installed.${NC}"
+    echo -e "Please install it using: ${YELLOW}sudo apt-get install -y python3-venv${NC}"
+    exit 1
+fi
+
+# 1d. Check for PortAudio (sounddevice dependency)
+if ! ldconfig -p 2>/dev/null | grep libportaudio &> /dev/null; then
+    echo -e "${YELLOW}Warning: PortAudio library (libportaudio2) was not detected.${NC}"
+    echo -e "The 'sounddevice' library requires PortAudio to interface with microphones/speakers."
+    echo -e "Please install it by running: ${YELLOW}sudo apt-get update && sudo apt-get install -y libportaudio2 libasound2-dev${NC}"
+fi
+
 # 2. Setup virtual environment
 echo -e "\n${GREEN}Step 1: Setting up Python Virtual Environment (.venv)...${NC}"
 if [ ! -d ".venv" ]; then

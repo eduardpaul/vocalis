@@ -1,0 +1,51 @@
+system:
+  name: "living_room_node"
+  log_level: "INFO"
+  max_concurrency_wait: 5.0  # Seconds to wait for IDLE state before 409 Conflict
+
+interfaces:
+  http:
+    enabled: true
+    enabled_ui: true
+    host: "0.0.0.0"
+    port: 8080
+  mqtt:
+    enabled: false
+    broker: "localhost"  # Updated to localhost for easy local testing, can be overridden in deployment
+    port: 1883
+    topic_prefix: "home/assistant/node1"
+
+audio:
+  input_device_index: "default"
+  output_device_index: "default"
+  sample_rate: 16000
+  channels: 1
+  chunk_size: 512
+  gain: 5.0
+
+models:
+  vad:
+    silero_onnx_path: "./models/silero_vad.onnx"
+    threshold: 0.5
+    min_silence_duration_ms: 700
+  asr:
+    encoder: "./models/sherpa-onnx-moonshine-base-es-quantized-2026-02-27/encoder_model.ort"
+    decoder: "./models/sherpa-onnx-moonshine-base-es-quantized-2026-02-27/decoder_model_merged.ort"
+    tokens: "./models/sherpa-onnx-moonshine-base-es-quantized-2026-02-27/tokens.txt"
+  speaker_id:
+    model: "./models/wespeaker_en_voxceleb_CAM++.onnx"
+    embeddings_dir: "./models/known_speakers/"
+    min_audio_duration_seconds: 2
+    confidence_threshold: 0.55
+    challenge_failed_prompt: "Acceso denegado."
+    challenge_init_promt: "Por favor, repita"
+    challenge_prompts:
+      - "Mi voz es mi pasaporte."
+      - "Confirmo mi identidad mediante el timbre acústico de mi voz."
+      - "Sistema Vocalis, autoriza el acceso a mi perfil personal."
+      - "Verificación biométrica en curso para el control principal."
+      - "Esta es mi clave vocal de seguridad para hoy."
+      - "Reconoce mis patrones de voz y ejecuta el comando."
+  tts:
+    engine: "supertonic"
+    model_dir: "./models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11"

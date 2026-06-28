@@ -1,0 +1,30 @@
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+ENV/
+
+# Model weights and downloaded files (should be downloaded via setup/download script)
+models/
+*.onnx
+*.ort
+*.bin
+
+# Private speaker embeddings (numpy profiles)
+models/known_speakers/
+*.npy
+
+# Temporary / reference audio files
+*.wav
+*.m4a
+*.mp3
+models/known_speakers/temp_enrollment/
+
+# Local configuration overrides
+.idea/
+.vscode/
+*.log

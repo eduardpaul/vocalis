@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vocalis"
+version = "0.1.0"
+description = "A local voice assistant pipeline"
+readme = "README.md"
+requires-python = ">=3.9"
+
+# This automatically finds your 'vocalis' folder and registers it as a module
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vocalis*"]

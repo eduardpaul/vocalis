@@ -29,6 +29,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+*Note: install openwakeword without deps make it work 'pip install openwakeword --no-deps'.*
+
+
 ### 2. Download ML Models
 Ensure the required ONNX models are present. Run the downloader helper to fetch the CAM++ speaker ID model:
 ```bash
@@ -144,3 +147,15 @@ Execute the automated pytest suite using the real models:
 python -m pytest -v
 ```
 This tests configurations, StateManager locks, VAD capture, Moonshine ASR decodes, Supertonic synthesis, speaker verification (CAM++), and the active challenge loop flow.
+
+
+RASBERY NOTES: 
+
+nano ~/.bashrc
+export PA_ALSA_PLUGHW=1
+
+nano ~/.asoundrc
+pcm.!default {
+    type asym
+    capture.pcm "plug:hw:2,0"
+}

@@ -88,7 +88,7 @@ StandardOutput=syslog
 StandardError=syslog
 SyslogIdentifier=vocalis
 Environment=PYTHONUNBUFFERED=1
-
+Environment=PA_ALSA_PLUGHW=1
 [Install]
 WantedBy=multi-user.target
 EOF

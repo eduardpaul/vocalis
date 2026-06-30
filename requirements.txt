@@ -12,7 +12,6 @@ pytest>=8.0.0
 pytest-asyncio>=0.23.0
 python-multipart>=0.0.9
 pydantic>=2.0.0
-openwakeword>=0.6.0
 onnxruntime>=1.17.0
 websockets>=12.0
 

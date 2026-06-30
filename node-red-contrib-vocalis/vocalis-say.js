@@ -1,7 +1,34 @@
 module.exports = function(RED) {
+    function getValueFromPath(obj, path) {
+        if (!path) return undefined;
+        if (path.startsWith('msg.')) {
+            path = path.slice(4);
+        }
+        const parts = path.split('.');
+        let current = obj;
+        for (const part of parts) {
+            if (current === null || current === undefined) {
+                return undefined;
+            }
+            current = current[part];
+        }
+        return current;
+    }
+
+    function interpolate(text, msg) {
+        if (typeof text !== 'string') return '';
+        return text.replace(/\{\{([^}]+)\}\}|\{([^}]+)\}/g, (match, p1, p2) => {
+            const path = (p1 || p2).trim();
+            const val = getValueFromPath(msg, path);
+            return val !== undefined ? (typeof val === 'object' ? JSON.stringify(val) : String(val)) : match;
+        });
+    }
+
     function VocalisSayNode(config) {
         RED.nodes.createNode(this, config);
         this.server = RED.nodes.getNode(config.server);
+        this.text = config.text;
+        this.textType = config.textType || "str";
         this.priority = parseInt(config.priority) || 0;
 
         const node = this;
@@ -16,7 +43,24 @@ module.exports = function(RED) {
                 return;
             }
 
-            const textToSay = msg.payload || node.text;
+            let textToSay = "";
+            if (node.text && node.text.trim() !== "") {
+                try {
+                    const rawVal = RED.util.evaluateNodeProperty(node.text, node.textType, node, msg);
+                    if (typeof rawVal === 'string') {
+                        textToSay = interpolate(rawVal, msg);
+                    } else if (rawVal !== undefined && rawVal !== null) {
+                        textToSay = typeof rawVal === 'object' ? JSON.stringify(rawVal) : String(rawVal);
+                    }
+                } catch (err) {
+                    node.status({ fill: "red", shape: "ring", text: "error evaluating property" });
+                    done(`Failed to evaluate text property: ${err.message}`);
+                    return;
+                }
+            } else {
+                textToSay = msg.payload;
+            }
+
             if (!textToSay || typeof textToSay !== 'string') {
                 node.status({ fill: "yellow", shape: "ring", text: "invalid payload" });
                 done("Payload must be a string containing the text to speak.");

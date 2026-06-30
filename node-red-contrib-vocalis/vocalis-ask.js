@@ -87,10 +87,15 @@ module.exports = function(RED) {
 
             const url = `${node.server.baseUrl}/ask`;
 
+            const headers = { 'Content-Type': 'application/json' };
+            if (node.server.apiKey) {
+                headers['X-API-Key'] = node.server.apiKey;
+            }
+
             try {
                 const response = await fetch(url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify(payload)
                 });
 

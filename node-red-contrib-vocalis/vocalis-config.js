@@ -7,14 +7,20 @@ module.exports = function(RED) {
         this.port = n.port || "8080";
         this.ssl = n.ssl || false;
 
+        this.apiKey = n.apiKey !== undefined ? n.apiKey : "demo_password";
+
         const node = this;
 
         // Determine protocols
         const wsProto = node.ssl ? "wss" : "ws";
         const httpProto = node.ssl ? "https" : "http";
 
-        node.wsUrl = `${wsProto}://${node.host}:${node.port}/ws`;
         node.baseUrl = `${httpProto}://${node.host}:${node.port}`;
+        if (node.apiKey) {
+            node.wsUrl = `${wsProto}://${node.host}:${node.port}/ws?token=${encodeURIComponent(node.apiKey)}`;
+        } else {
+            node.wsUrl = `${wsProto}://${node.host}:${node.port}/ws`;
+        }
 
         node.ws = null;
         node.closing = false;

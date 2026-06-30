@@ -2,12 +2,30 @@ import asyncio
 import logging
 import json
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi.security.api_key import APIKeyHeader, APIKeyQuery
 from fastapi.middleware.cors import CORSMiddleware
 from aiomqtt import Client as MqttClient
 from typing import AsyncGenerator, List, Set, Optional
 import time
 import random
+
+api_key_query = APIKeyQuery(name="token", auto_error=False)
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+async def verify_api_key(
+    request: Request,
+    api_key_q: Optional[str] = Depends(api_key_query),
+    api_key_h: Optional[str] = Depends(api_key_header),
+):
+    expected_key = request.app.state.config.interfaces.http.api_key
+    if not expected_key:
+        return
+    if api_key_q == expected_key or api_key_h == expected_key:
+        return
+    raise HTTPException(
+        status_code=403, detail="Could not validate credentials"
+    )
 
 from vocalis.config import AppConfig
 from vocalis.state import StateManager
@@ -364,25 +382,25 @@ def create_app(config: AppConfig) -> FastAPI:
         channels=config.audio.channels
     )
     
-    @app.post("/ask", response_model=AskResponse)
+    @app.post("/ask", response_model=AskResponse, dependencies=[Depends(verify_api_key)])
     async def ask(payload: AskRequest):
         resp = await app.state.engine.ask(payload, app.state.source, app.state.sink)
         if resp.status == "error" and "409 Conflict" in (resp.error_message or ""):
             raise HTTPException(status_code=409, detail=resp.error_message)
         return resp
         
-    @app.post("/say", response_model=SayResponse)
+    @app.post("/say", response_model=SayResponse, dependencies=[Depends(verify_api_key)])
     async def say(payload: SayRequest):
         resp = await app.state.engine.say(payload, app.state.sink)
         if resp.status == "error" and "409 Conflict" in (resp.error_message or ""):
             raise HTTPException(status_code=409, detail=resp.error_message)
         return resp
         
-    @app.get("/status")
+    @app.get("/status", dependencies=[Depends(verify_api_key)])
     async def status():
         return {"state": app.state.state_manager.current}
 
-    @app.get("/queue")
+    @app.get("/queue", dependencies=[Depends(verify_api_key)])
     async def get_queue():
         q_list = []
         for q in app.state.engine.queue:
@@ -400,13 +418,26 @@ def create_app(config: AppConfig) -> FastAPI:
             }
         return {"active": active, "pending": q_list}
 
-    @app.post("/queue/cancel/{context_id}")
+    @app.post("/queue/cancel/{context_id}", dependencies=[Depends(verify_api_key)])
     async def cancel_queue_item(context_id: str):
         success = await app.state.engine.cancel_request(context_id)
         return {"context_id": context_id, "success": success}
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
+        expected_key = app.state.config.interfaces.http.api_key
+        if expected_key:
+            token = websocket.query_params.get("token")
+            x_api_key = websocket.headers.get("x-api-key")
+            if token != expected_key and x_api_key != expected_key:
+                await websocket.accept()
+                await websocket.send_json({
+                    "event": "error",
+                    "message": "Unauthorized: Invalid API Key"
+                })
+                await websocket.close(code=4003)
+                return
+
         await ws_manager.connect(websocket)
         try:
             await websocket.send_json({

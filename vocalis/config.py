@@ -13,6 +13,7 @@ class HttpInterfaceConfig(BaseModel):
     enabled_ui: bool = True
     host: str = "0.0.0.0"
     port: int = 8080
+    api_key: Optional[str] = ""
 
 class MqttInterfaceConfig(BaseModel):
     enabled: bool = True

@@ -408,6 +408,15 @@ HTML_CONTENT = """<!DOCTYPE html>
                     <span class="sub-label">Current State Machine State</span>
                 </div>
 
+                <div class="panel-title">Authentication</div>
+                <div class="form-row">
+                    <label for="apiKey">API Key / Token</label>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.2rem;">
+                        <input type="text" id="apiKey" value="demo_password" placeholder="Leave empty if disabled" style="flex-grow: 1;">
+                        <button class="btn" onclick="reconnectWS()" style="padding: 0.6rem 0.8rem; font-size: 0.8rem; min-width: 90px; box-shadow: none;">Connect</button>
+                    </div>
+                </div>
+
                 <div class="panel-title">Trigger TTS (Say)</div>
                  <div class="form-row">
                     <label for="sayText">Message to Speak</label>
@@ -484,9 +493,16 @@ HTML_CONTENT = """<!DOCTYPE html>
     </div>
 
     <script>
-        const wsUrl = "ws://localhost:8080/ws";
         let ws = null;
         let activeFilter = 'all';
+
+        function reconnectWS() {
+            if (ws) {
+                ws.onclose = null;
+                ws.close();
+            }
+            connectWS();
+        }
 
         const connectionBadge = document.getElementById('connectionBadge');
         const connectionText = document.getElementById('connectionText');
@@ -549,7 +565,9 @@ HTML_CONTENT = """<!DOCTYPE html>
             connectionText.textContent = "Connecting...";
             connectionBadge.className = "connection-badge disconnected";
 
-            ws = new WebSocket(wsUrl);
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const tokenParam = apiKey ? "?token=" + encodeURIComponent(apiKey) : "";
+            ws = new WebSocket("ws://localhost:8080/ws" + tokenParam);
 
             ws.onopen = () => {
                 connectionText.textContent = "Connected";
@@ -598,13 +616,18 @@ HTML_CONTENT = """<!DOCTYPE html>
         async function triggerSay() {
             const text = document.getElementById('sayText').value.trim();
             const priority = parseInt(document.getElementById('sayPriority').value) || 0;
+            const apiKey = document.getElementById('apiKey').value.trim();
             const ctxId = `nr_say_${Math.floor(Math.random() * 100000)}`;
             if (!text) return alert("Please specify text to speak.");
 
             try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (apiKey) {
+                    headers['X-API-Key'] = apiKey;
+                }
                 const res = await fetch("http://localhost:8080/say", {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify({ context_id: ctxId, text: text, priority: priority })
                 });
                 const result = await res.json();
@@ -620,14 +643,19 @@ HTML_CONTENT = """<!DOCTYPE html>
             const speakerId = document.getElementById('askSpeakerId').checked;
             const outputFormat = document.getElementById('askOutputFormat').value;
             const priority = parseInt(document.getElementById('askPriority').value) || 0;
+            const apiKey = document.getElementById('apiKey').value.trim();
             const ctxId = `nr_ask_${Math.floor(Math.random() * 100000)}`;
 
             if (!prompt) return alert("Please specify prompt text.");
 
             try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (apiKey) {
+                    headers['X-API-Key'] = apiKey;
+                }
                 const res = await fetch("http://localhost:8080/ask", {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify({
                         context_id: ctxId,
                         tts_text: prompt,
@@ -662,11 +690,17 @@ HTML_CONTENT = """<!DOCTYPE html>
 
         async function sendCancelHTTP() {
             const ctxId = document.getElementById('cancelContextId').value.trim();
+            const apiKey = document.getElementById('apiKey').value.trim();
             if (!ctxId) return alert("Please specify a Context ID to cancel.");
 
             try {
+                const headers = {};
+                if (apiKey) {
+                    headers['X-API-Key'] = apiKey;
+                }
                 const res = await fetch(`http://localhost:8080/queue/cancel/${ctxId}`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: headers
                 });
                 const result = await res.json();
                 logEvent('cancellation', 'HTTP RESP', `Http Cancel Response: Success=${result.success}`, result);

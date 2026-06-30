@@ -17,8 +17,7 @@ def main():
     config = AppConfig.load_yaml(config_path)
     config.resolve_paths(os.getcwd())
 
-    project_root = os.path.dirname(script_dir)
-    model_path = os.path.join(project_root, "models", "openwakeword_alfred.onnx")
+    model_path = config.wakeword.model_path
     
     print(f"Loading model: {model_path}")
     oww_model = OWWModel(
